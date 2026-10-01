@@ -1,0 +1,1818 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>快閃結帳台 POS</title>
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        :root {
+            --primary: #007aff; --bg-color: #f2f2f7; --card-bg: #ffffff;
+            --text-main: #1c1c1e; --text-muted: #8e8e93; --border: #e5e5ea;
+            --milk-bg: #f0f8ff; --milk-txt: #0056b3;
+            --yogurt-bg: #fff6e5; --yogurt-txt: #b25e00;
+            --bun-bg: #f0fdf4; --bun-txt: #15803d;
+            --danger: #ff3b30; --success: #34c759;
+            --highlight: #ffdf00; 
+            --cold-bg: #e0f7fa; --cold-txt: #00838f; 
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: var(--bg-color); color: var(--text-main); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* 頂部極簡 Header */
+        .header { 
+            background-color: var(--card-bg); 
+            padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; 
+            border-bottom: 1px solid var(--border); 
+            display: flex; justify-content: space-between; align-items: center; 
+            flex-shrink: 0; z-index: 10; gap: 8px;
+        }
+        .header-title { font-size: 1.05rem; font-weight: 900; color: var(--text-main); white-space: nowrap; }
+        .header-controls { display: flex; gap: 6px; align-items: center; }
+        .compact-input { 
+            padding: 5px 8px; border-radius: 8px; border: 1px solid var(--primary); 
+            background: #f0f8ff; color: var(--primary); font-size: 0.82rem; font-weight: bold; 
+            outline: none;
+        }
+        
+        #loading-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.9); z-index:999; display:flex; flex-direction:column; justify-content:center; align-items:center; font-size:1.2rem; font-weight:bold; color:var(--primary); }
+
+        /* 內容區共用 */
+        .tab-content { flex-grow: 1; overflow-y: auto; display: none; flex-direction: column; padding-bottom: 25px; }
+        .tab-content.active { display: flex; }
+        .page-title { padding: 12px 15px 6px; font-size: 1.15rem; font-weight: 800; display: flex; justify-content: space-between; align-items: center;}
+
+        /* POS 結帳頁 */
+        .product-area { padding: 10px; background: var(--card-bg); flex-shrink: 0; }
+        .product-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        .btn-product { border: none; border-radius: 10px; padding: 10px 2px; text-align: center; cursor: pointer; font-weight: 600; font-size: 0.95rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .btn-product:active { opacity: 0.5; transform: scale(0.98); }
+        .p-price { font-size: 0.75rem; opacity: 0.7; margin-top: 2px; font-weight: normal; }
+        .cat-milk { background: var(--milk-bg); color: var(--milk-txt); }
+        .cat-yogurt { background: var(--yogurt-bg); color: var(--yogurt-txt); }
+        .cat-bun { background: var(--bun-bg); color: var(--bun-txt); }
+
+        .cart-area { flex-grow: 1; overflow-y: auto; padding: 10px; }
+        .cart-item { background: var(--card-bg); border-radius: 10px; padding: 10px 15px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+        .qty-controls { display: flex; align-items: center; gap: 12px; }
+        .qty-btn { width: 30px; height: 30px; border-radius: 15px; border: none; background: var(--bg-color); color: var(--primary); font-size: 1.2rem; font-weight: bold; cursor: pointer; }
+        
+        /* 結帳操作列 */
+        .checkout-bar { background: var(--card-bg); padding: 12px 15px; border-top: 1px solid var(--border); flex-shrink: 0; }
+        .checkout-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;}
+        .discount-btn { background: #fff0f0; color: var(--danger); border: 1px solid #ffd6d6; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 0.9rem; cursor: pointer; }
+        
+        .checkout-actions { display: flex; gap: 10px; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 14px; border-radius: 10px; font-size: 1.1rem; font-weight: bold; width: 100%; transition: 0.2s; cursor: pointer;}
+        .btn-outline-action { background: white; color: var(--primary); border: 2px solid var(--primary); padding: 14px; border-radius: 10px; font-size: 1.1rem; font-weight: bold; cursor: pointer;}
+        .btn-disabled { opacity: 0.4; pointer-events: none; }
+
+        /* 高密度核銷專區 */
+        .ff-nav-wrapper { padding: 0 15px; margin-bottom: 10px; }
+        .ff-nav { display: flex; background: #e5e5ea; border-radius: 8px; padding: 3px; gap: 2px; }
+        .ff-btn { flex: 1; padding: 8px; border: none; background: transparent; border-radius: 6px; font-weight: bold; font-size: 0.95rem; color: var(--text-muted); transition: 0.2s; cursor: pointer; }
+        .ff-btn.active { background: white; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .fulfillment-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0 12px 15px; }
+        @media (max-width: 500px) { .fulfillment-grid { grid-template-columns: 1fr; } }
+
+        .ff-card { 
+            background: white; border: 1.5px solid #d1d5db; border-radius: 8px; 
+            overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.04); 
+            display: flex; flex-direction: column; cursor: pointer; transition: 0.15s;
+            padding: 8px 10px; gap: 5px;
+        }
+        .ff-card:active { transform: scale(0.99); }
+        .ff-card.done { opacity: 0.55; border-color: var(--success); background: #fdfdfd; }
+        
+        .ff-row-1 { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed var(--border); padding-bottom: 4px;}
+        .ff-meta { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; font-weight: 800; color: var(--text-main); flex-wrap: wrap; }
+        .ff-seq-badge { background: var(--highlight); color: #000; padding: 1px 5px; border-radius: 4px; font-size: 0.75rem; }
+        .ff-venue-badge { background: #e0f2fe; color: #0369a1; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; }
+        .ff-date-text { color: var(--text-muted); font-size: 0.75rem; }
+        
+        .btn-fast-fulfill {
+            background: var(--primary); color: white; border: none; padding: 4px 8px;
+            border-radius: 6px; font-size: 0.75rem; font-weight: 800; cursor: pointer; white-space: nowrap;
+        }
+        .btn-fast-fulfill.is-done { background: var(--success); cursor: default; }
+
+        .ff-row-2 { display: flex; justify-content: space-between; align-items: center; font-size: 0.95rem; font-weight: 900; color: #111827; }
+        .ff-cold-tag { background: var(--cold-bg); color: var(--cold-txt); font-size: 0.7rem; padding: 1px 4px; border-radius: 4px; font-weight: bold; }
+
+        .ff-row-3 { 
+            font-size: 0.85rem; font-weight: 700; color: var(--primary); 
+            background: var(--milk-bg); padding: 5px 8px; border-radius: 6px; 
+            border: 1px solid #dbeafe; white-space: pre-line; line-height: 1.35;
+        }
+
+        /* 盤點與庫存管理樣式 */
+        .inventory-card {
+            background: white; border-radius: 10px; padding: 12px; margin: 0 15px 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 4px solid var(--primary);
+        }
+        .inv-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .inv-table th, .inv-table td { padding: 6px 4px; text-align: center; }
+        .inv-table th { background: #f8fafc; color: var(--text-muted); font-weight: bold; border-bottom: 1px solid var(--border); }
+        .inv-input { width: 55px; padding: 4px; border-radius: 4px; border: 1px solid #ccc; text-align: right; font-weight: bold; }
+        .inv-status { font-weight: bold; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; }
+        .inv-status.ok { background: #dcfce7; color: #15803d; }
+        .inv-status.warn { background: #fee2e2; color: #b91c1c; }
+
+        /* 報表區塊 */
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 15px; margin-bottom: 10px;}
+        .stat-box { background: var(--card-bg); padding: 12px; border-radius: 10px; text-align: center; }
+        .stat-box.highlight { background: var(--primary); color: white; }
+        .stat-val { font-size: 1.3rem; font-weight: 800; margin-top: 4px; }
+        
+        .report-nav-wrapper { margin: 10px 15px 15px; overflow-x: auto; white-space: nowrap; padding-bottom: 5px; }
+        .report-nav { display: inline-flex; background: #e5e5ea; border-radius: 8px; padding: 3px; gap: 2px;}
+        .report-btn { padding: 6px 12px; border: none; background: transparent; border-radius: 6px; font-weight: bold; font-size: 0.9rem; color: var(--text-muted); transition: 0.2s; cursor: pointer; }
+        .report-btn.active { background: white; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .week-breakdown-card { background: white; margin: 0 15px 15px; border-radius: 12px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .week-breakdown-title { font-weight: 800; font-size: 0.95rem; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .day-stat-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #f2f2f7; font-size: 0.85rem; }
+        .day-stat-row:last-child { border-bottom: none; }
+        .day-badge { width: 48px; font-weight: bold; border-radius: 4px; text-align: center; padding: 2px 0; background: #f2f2f7; color: var(--text-main); }
+        .day-badge.today { background: var(--primary); color: white; }
+        .day-progress-wrap { flex-grow: 1; margin: 0 12px; background: #f0f0f5; height: 7px; border-radius: 4px; overflow: hidden; }
+        .day-progress-bar { height: 100%; background: var(--primary); width: 0%; border-radius: 4px; }
+
+        /* 歷史紀錄 */
+        .history-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 15px; }
+        @media (max-width: 500px) { .history-grid { grid-template-columns: 1fr; } }
+        .record-card { background: var(--card-bg); padding: 10px; border-radius: 10px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05); gap: 6px;}
+        .btn-revert { background: #fee2e2; color: var(--danger); border: 1px solid #fca5a5; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; cursor: pointer; margin-top: 4px; }
+
+        /* 中控台 */
+        .console-section { background: white; margin: 0 15px 15px; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .console-header { font-size: 0.95rem; font-weight: 800; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .console-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+        .console-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 8px; background: #f9f9fb; border: 1px solid #e5e5ea; font-size: 0.9rem; }
+        .console-item.archived { background: #f3f4f6; opacity: 0.65; border-style: dashed; }
+        .console-btn-group { display: flex; gap: 8px; }
+        .btn-console { flex: 1; border: none; padding: 10px; border-radius: 8px; font-size: 0.85rem; font-weight: bold; cursor: pointer; text-align: center; }
+        .btn-console-primary { background: var(--primary); color: white; }
+        .btn-console-sub { background: #e5e5ea; color: var(--text-main); }
+        .btn-console-warn { background: #fef3c7; color: #b45309; }
+        .btn-console-danger { background: #fee2e2; color: var(--danger); }
+
+        /* 標籤小徽章 */
+        .status-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .status-active { background: #dcfce7; color: #166534; }
+        .status-archived { background: #e5e7eb; color: #4b5563; }
+
+        /* 底部導航 */
+        .bottom-nav { background: rgba(255,255,255,0.92); backdrop-filter: blur(10px); border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 8px 0 calc(env(safe-area-inset-bottom) + 8px); flex-shrink: 0; z-index: 20;}
+        .nav-item { text-align: center; font-size: 0.7rem; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; cursor: pointer; }
+        .nav-item.active { color: var(--primary); font-weight: bold; }
+        .nav-icon { font-size: 1.25rem; }
+
+        .swal-quick-btn { background: #f0f2f5; border: 1px solid #dcdfe6; border-radius: 6px; padding: 8px; font-weight: bold; cursor: pointer; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-overlay">⚡ 系統啟動中...</div>
+
+    <!-- 頂部極簡導航欄 -->
+    <div class="header">
+        <div class="header-title">⚡快閃結帳台</div>
+        <div class="header-controls">
+            <select class="compact-input" id="global-venue-select" onchange="window.changeVenue()"></select>
+            <input type="date" id="global-date-filter" class="compact-input" onchange="window.onGlobalDateChange()">
+        </div>
+    </div>
+
+    <!-- 分頁 1: 結帳 (POS) -->
+    <div id="tab-pos" class="tab-content active">
+        <div class="product-area"><div class="product-grid" id="product-grid"></div></div>
+        <div class="cart-area" id="cart-area"><div id="cart-list"></div></div>
+
+        <div class="checkout-bar">
+            <div class="checkout-info">
+                <button class="discount-btn" onclick="window.openDiscountModal()">🎟️ 折扣: -$<span id="discount-val">0</span></button>
+                <div style="font-size: 1.4rem; font-weight: 900;">$<span id="total-price">0</span></div>
+            </div>
+            <div class="checkout-actions">
+                <button class="btn-outline-action btn-disabled" id="btn-preorder" style="flex:1;" onclick="window.openPreorderModal()">📦 預購登記</button>
+                <button class="btn-main btn-disabled" id="btn-checkout" style="flex:2;" onclick="window.checkout()">💳 現場結帳</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分頁 2: 核銷專區 (Fulfillment) -->
+    <div id="tab-fulfillment" class="tab-content">
+        <div class="page-title">
+            <span>📦 近三天產能與核銷</span>
+        </div>
+        
+        <div class="ff-nav-wrapper">
+            <div class="ff-nav">
+                <button class="ff-btn active" id="btn-ff-list" onclick="window.switchFfTab('list')">📄 配貨清單 (高密度)</button>
+                <button class="ff-btn" id="btn-ff-stats" onclick="window.switchFfTab('stats')">📊 盤點與庫存比對</button>
+            </div>
+        </div>
+
+        <!-- 清單檢視 -->
+        <div id="ff-view-list">
+            <div style="padding: 0 15px 8px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                點擊右側「⚡ 發貨」直接核銷入帳；點擊卡片本體可編輯明細。
+            </div>
+            <div id="fulfillment-list" class="fulfillment-grid"></div>
+        </div>
+
+        <!-- 盤點與庫存狀態比對 -->
+        <div id="ff-view-stats" style="display: none;">
+            <div class="inventory-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <b style="font-size:0.95rem;">📦 即時配貨盤點 vs 現貨庫存</b>
+                    <small style="color:var(--text-muted);">基準日：<span id="inv-base-date"></span></small>
+                </div>
+                <table class="inv-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;">品項</th>
+                            <th>待配總量</th>
+                            <th>現有庫存</th>
+                            <th>差異</th>
+                            <th>狀態</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventory-check-body"></tbody>
+                </table>
+                <div style="text-align:right; margin-top:8px;">
+                    <button class="btn-console btn-console-sub" style="padding:4px 10px; font-size:0.75rem;" onclick="window.saveCurrentInventory()">💾 儲存現貨庫存紀錄</button>
+                </div>
+            </div>
+
+            <div style="padding: 0 15px 10px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                以下為未來三天 <strong style="color:var(--danger)">未發貨</strong> 的每日需求明細：
+            </div>
+            <div id="fulfillment-stats-container" style="padding: 0 15px; display: flex; flex-direction: column; gap: 15px;"></div>
+        </div>
+    </div>
+
+    <!-- 分頁 3: 歷史紀錄 -->
+    <div id="tab-history" class="tab-content">
+        <div class="page-title"><span>📋 訂單紀錄與復原</span></div>
+        <div id="history-list" class="history-grid"></div>
+    </div>
+
+    <!-- 分頁 4: 報表 (含週一到週日) -->
+    <div id="tab-stats" class="tab-content">
+        <div class="page-title"><span>📊 營業報表</span></div>
+        
+        <div class="report-nav-wrapper">
+            <div class="report-nav">
+                <button class="report-btn" id="btn-stat-all" onclick="window.switchStatMode('all')">全部</button>
+                <button class="report-btn" id="btn-stat-monthly" onclick="window.switchStatMode('monthly')">本月</button>
+                <button class="report-btn" id="btn-stat-weekend" onclick="window.switchStatMode('weekend')">週五~日</button>
+                <button class="report-btn" id="btn-stat-yesterday" onclick="window.switchStatMode('yesterday')">昨天</button>
+                <button class="report-btn active" id="btn-stat-daily" onclick="window.switchStatMode('daily')">本日</button>
+            </div>
+        </div>
+
+        <div class="stat-grid">
+            <div class="stat-box highlight"><div style="font-size:0.85rem;">總營業額</div><div class="stat-val">$<span id="stat-revenue">0</span></div></div>
+            <div class="stat-box"><div style="font-size:0.85rem; color: var(--text-muted);">總毛利</div><div class="stat-val" style="color: var(--success);">$<span id="stat-profit">0</span></div></div>
+        </div>
+        <div style="padding: 0 15px; font-size: 0.8rem; color: var(--text-muted); text-align: right; margin-bottom: 12px;" id="stat-date-range"></div>
+
+        <div class="week-breakdown-card">
+            <div class="week-breakdown-title">
+                <span>📅 本週每日營業額分析 (週一 ~ 週日)</span>
+                <small style="color:var(--text-muted); font-size:0.75rem;" id="week-date-span"></small>
+            </div>
+            <div id="week-days-list"></div>
+        </div>
+    </div>
+
+    <!-- 分頁 5: ⚙️ 中控台 -->
+    <div id="tab-console" class="tab-content">
+        <div class="page-title"><span>⚙️ 中控台與模組設定</span></div>
+
+        <!-- 1. 預設商品與價格管理 -->
+        <div class="console-section">
+            <div class="console-header">
+                <span>📦 預設商品與價格管理</span>
+                <button style="background:var(--primary); color:white; border:none; padding:4px 8px; border-radius:6px; font-size:0.75rem; cursor:pointer;" onclick="window.promptAddCatalogItem()">➕ 新增商品</button>
+            </div>
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
+                設定商品的全球預設金額，可一鍵同步至所有發貨站：
+            </div>
+            <div class="console-list" id="console-catalog-list"></div>
+        </div>
+
+        <!-- 2. 站點模組生命週期管理 (啟用/封存) -->
+        <div class="console-section">
+            <div class="console-header">
+                <span>📍 站點模組管理 (快閃/常設)</span>
+                <button style="background:var(--primary); color:white; border:none; padding:4px 8px; border-radius:6px; font-size:0.75rem; cursor:pointer;" onclick="window.promptAddNewVenue()">➕ 新增站點</button>
+            </div>
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
+                快閃攤位結束時可直接「封存」，維持選單精簡且不影響歷史帳務：
+            </div>
+            <div class="console-list" id="console-venue-list"></div>
+            
+            <div class="console-btn-group">
+                <button class="btn-console btn-console-sub" onclick="window.toggleSelectAllVenues()">全選 / 反選</button>
+                <button class="btn-console btn-console-warn" onclick="window.batchToggleVenueStatus('archived')">📦 批次封存</button>
+                <button class="btn-console btn-console-primary" onclick="window.batchToggleVenueStatus('active')">⚡ 批次啟用</button>
+            </div>
+        </div>
+
+        <!-- 3. 商品卡牌顯示調配 (彈跳視窗設定) -->
+        <div class="console-section">
+            <div class="console-header">
+                <span>🎨 商品卡牌顯示設定</span>
+                <button style="background:#f0f2f5; border:1px solid #d1d5db; padding:4px 8px; border-radius:6px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.openCardDisplayModal()">⚙️ 開啟配置</button>
+            </div>
+            <div style="font-size:0.8rem; color:var(--text-muted); line-height:1.4;">
+                自訂 POS 結帳區與出貨卡牌的顯示內容（顯示售價、類別色塊、合約價格標籤等）。
+            </div>
+        </div>
+
+        <!-- 4. 週期取貨快速導入模組 -->
+        <div class="console-section">
+            <div class="console-header">
+                <span>⚡ 週期取貨模組 (快速導入)</span>
+                <button style="background:#e0f2fe; color:#0369a1; border:none; padding:4px 8px; border-radius:6px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.promptSaveCurrentAsTemplate()">➕ 存為新模組</button>
+            </div>
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">
+                一鍵載入特定客群名單至選取日期（例如 A 組、B 組常態客戶）：
+            </div>
+            <div id="console-templates-list" style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:10px;"></div>
+        </div>
+
+        <!-- 5. 指定 Google 工作表名稱匯入 -->
+        <div class="console-section">
+            <div class="console-header">
+                <span>📑 依工作表名稱匯入客群</span>
+            </div>
+            <button class="btn-console btn-console-primary" style="width:100%;" onclick="window.openGoogleSheetImporter()">📥 指定工作表匯入名單</button>
+        </div>
+
+        <!-- 6. 系統維護與日期跳轉 -->
+        <div class="console-section">
+            <div class="console-header">
+                <span>⚡ 快捷跳轉</span>
+            </div>
+            <div class="console-btn-group">
+                <button class="btn-console btn-console-sub" onclick="window.jumpDate(-1)">昨天</button>
+                <button class="btn-console btn-console-sub" onclick="window.jumpDate(0)">今天</button>
+                <button class="btn-console btn-console-sub" onclick="window.jumpDate(1)">明天</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部導航列 (5個) -->
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="window.switchTab('pos')"><div class="nav-icon">🛒</div>結帳</div>
+        <div class="nav-item" onclick="window.switchTab('fulfillment')"><div class="nav-icon">📦</div>核銷</div>
+        <div class="nav-item" onclick="window.switchTab('history')"><div class="nav-icon">📋</div>紀錄</div>
+        <div class="nav-item" onclick="window.switchTab('stats')"><div class="nav-icon">📊</div>報表</div>
+        <div class="nav-item" onclick="window.switchTab('console')"><div class="nav-icon">⚙️</div>中控台</div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue, push, update, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB6D9vh6J2mdnjz2VXEVe99oi7oLF-irFo",
+      authDomain: "crm-ts-1225-001.firebaseapp.com",
+      databaseURL: "https://crm-ts-1225-001-default-rtdb.firebaseio.com",
+      projectId: "crm-ts-1225-001"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    
+    const dbRefs = { 
+        catalog: ref(db, 'masterCatalog'), 
+        venues: ref(db, 'venues'), 
+        orders: ref(db, 'pos_orders'), 
+        pickups: ref(db, 'pickups'),
+        templates: ref(db, 'system_templates'),
+        inventory: ref(db, 'inventory_stocks'),
+        cardSettings: ref(db, 'settings_card_display')
+    };
+
+    let globalCatalog = {}; let globalVenues = {}; let globalOrders = {}; let globalPickups = {};
+    let globalTemplates = {}; let currentInventory = { prod_big: 0, prod_mid: 0 };
+    let cardDisplayConfig = { showPrice: true, showCategoryColor: true, showContractPrice: true };
+    let currentVenueId = ''; let currentVenueProducts = []; 
+    let cart = {}; let currentDiscount = 0; let currentCartTotal = 0;
+    
+    window.statMode = 'daily';
+    window.ffViewMode = 'list';
+    
+    const pad = n => n < 10 ? '0'+n : n;
+    const t = new Date();
+    window.globalDateStr = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+    document.getElementById('global-date-filter').value = window.globalDateStr;
+
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 1800,
+        timerProgressBar: true
+    });
+
+    async function initializeSystem() {
+        try {
+            onValue(dbRefs.cardSettings, (snap) => {
+                cardDisplayConfig = snap.val() || { showPrice: true, showCategoryColor: true, showContractPrice: true };
+                window.renderPOSProducts();
+                window.renderFulfillment();
+            });
+            onValue(dbRefs.catalog, (snap) => { 
+                globalCatalog = snap.val() || {}; 
+                window.changeVenue(); 
+                window.renderConsoleCatalog();
+            });
+            onValue(dbRefs.venues, (snap) => { 
+                globalVenues = snap.val() || {}; 
+                window.initVenueSelect(); 
+                window.renderConsoleVenues();
+            });
+            onValue(dbRefs.orders, (snap) => { 
+                globalOrders = snap.val() || {}; 
+                window.updateHistory(); 
+                window.updateStats(); 
+                window.renderWeekStats();
+            });
+            onValue(dbRefs.pickups, (snap) => { 
+                globalPickups = snap.val() || {}; 
+                window.renderFulfillment(); 
+                window.renderFfStats(); 
+                window.renderInventoryCheck();
+            });
+            onValue(dbRefs.templates, (snap) => {
+                globalTemplates = snap.val() || {};
+                window.renderConsoleTemplates();
+            });
+            onValue(dbRefs.inventory, (snap) => {
+                currentInventory = snap.val() || { prod_big: 0, prod_mid: 0 };
+                window.renderInventoryCheck();
+            });
+            
+            document.getElementById('loading-overlay').style.display = 'none';
+        } catch (error) { 
+            Swal.fire({ icon: 'error', title: '連線失敗', text: '請檢查網路連線。' }); 
+        }
+    }
+
+    const getThreeDaysWindow = (baseDateStr) => {
+        let d = new Date(baseDateStr);
+        let d1 = new Date(d); d1.setDate(d1.getDate() + 1);
+        let d2 = new Date(d); d2.setDate(d2.getDate() + 2);
+        let fmt = x => `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`;
+        return [baseDateStr, fmt(d1), fmt(d2)];
+    };
+
+    window.switchTab = function(tabId) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.bottom-nav .nav-item').forEach(el => el.classList.remove('active'));
+        document.getElementById(`tab-${tabId}`).classList.add('active');
+        event.currentTarget.classList.add('active');
+        if(tabId === 'stats') {
+            window.updateStats();
+            window.renderWeekStats();
+        }
+    };
+
+    window.switchFfTab = function(mode) {
+        window.ffViewMode = mode;
+        document.querySelectorAll('.ff-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`btn-ff-${mode}`).classList.add('active');
+        
+        document.getElementById('ff-view-list').style.display = mode === 'list' ? 'block' : 'none';
+        document.getElementById('ff-view-stats').style.display = mode === 'stats' ? 'block' : 'none';
+        if (mode === 'stats') {
+            window.renderInventoryCheck();
+            window.renderFfStats();
+        }
+    };
+    
+    window.onGlobalDateChange = function() {
+        window.globalDateStr = document.getElementById('global-date-filter').value;
+        window.updateHistory(); window.updateStats(); window.renderWeekStats();
+        window.renderFulfillment(); window.renderFfStats(); window.renderInventoryCheck();
+    };
+
+    window.jumpDate = function(offset) {
+        let d = new Date();
+        if(offset !== 0) {
+            d = new Date(window.globalDateStr);
+            d.setDate(d.getDate() + offset);
+        }
+        window.globalDateStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+        document.getElementById('global-date-filter').value = window.globalDateStr;
+        window.onGlobalDateChange();
+        Toast.fire({ icon: 'info', title: `切換至日期: ${window.globalDateStr}` });
+    };
+
+    // ====== 商品預設價格管理 ======
+    window.renderConsoleCatalog = function() {
+        const list = document.getElementById('console-catalog-list');
+        if(!list) return;
+        list.innerHTML = '';
+        const keys = Object.keys(globalCatalog).sort((a,b) => (globalCatalog[a].sortOrder||99) - (globalCatalog[b].sortOrder||99));
+        
+        if(keys.length === 0) {
+            list.innerHTML = '<div style="text-align:center; padding:15px; color:#888;">尚未建立商品目錄</div>';
+            return;
+        }
+
+        keys.forEach(k => {
+            const item = globalCatalog[k];
+            list.innerHTML += `
+                <div class="console-item">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-weight:bold;">${item.name}</span>
+                        <span style="color:var(--primary); font-weight:900;">$${item.price}</span>
+                    </div>
+                    <button class="btn-console btn-console-sub" style="flex:none; padding:4px 10px; font-size:0.75rem;" onclick="window.editCatalogItem('${k}')">編輯</button>
+                </div>
+            `;
+        });
+    };
+
+    window.promptAddCatalogItem = async function() {
+        const { value: formValues } = await Swal.fire({
+            title: '新增商品',
+            html: `
+                <input id="swal-new-name" class="swal2-input" placeholder="商品名稱 (例：小羊奶)" style="width:80%;">
+                <input id="swal-new-price" type="number" class="swal2-input" placeholder="預設金額" style="width:80%;">
+            `,
+            showCancelButton: true,
+            confirmButtonText: '新增',
+            cancelButtonText: '取消',
+            preConfirm: () => {
+                const name = document.getElementById('swal-new-name').value.trim();
+                const price = parseFloat(document.getElementById('swal-new-price').value) || 0;
+                if (!name) return Swal.showValidationMessage('請輸入商品名稱');
+                return { name, price };
+            }
+        });
+
+        if (formValues) {
+            const newId = 'prod_' + Date.now();
+            await set(ref(db, `masterCatalog/${newId}`), {
+                id: newId,
+                name: formValues.name,
+                price: formValues.price,
+                cost: 0,
+                cat: 'cat-milk',
+                sortOrder: 99
+            });
+            Toast.fire({ icon: 'success', title: '新增成功' });
+        }
+    };
+
+    window.editCatalogItem = async function(pId) {
+        const item = globalCatalog[pId];
+        const { value: formValues } = await Swal.fire({
+            title: '編輯商品與價格',
+            html: `
+                <input id="swal-item-name" class="swal2-input" value="${item.name}" placeholder="商品名稱" style="width:80%;">
+                <input id="swal-item-price" type="number" class="swal2-input" value="${item.price}" placeholder="預設金額" style="width:80%;">
+                <label style="display:flex; align-items:center; gap:8px; margin-top:15px; font-size:0.85rem; font-weight:bold; color:var(--primary); cursor:pointer;">
+                    <input type="checkbox" id="swal-sync-venues" checked style="width:18px; height:18px;">
+                    同步更新所有發貨站的此商品價格
+                </label>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '儲存更新',
+            cancelButtonText: '取消',
+            preConfirm: () => {
+                return {
+                    name: document.getElementById('swal-item-name').value.trim(),
+                    price: parseFloat(document.getElementById('swal-item-price').value) || 0,
+                    sync: document.getElementById('swal-sync-venues').checked
+                }
+            }
+        });
+
+        if (formValues) {
+            const updates = {};
+            updates[`masterCatalog/${pId}/name`] = formValues.name;
+            updates[`masterCatalog/${pId}/price`] = formValues.price;
+            
+            // 同步至所有現有發貨站
+            if (formValues.sync) {
+                Object.keys(globalVenues).forEach(vId => {
+                    updates[`venues/${vId}/items/${pId}`] = formValues.price;
+                });
+            }
+            
+            await update(ref(db), updates);
+            Toast.fire({ icon: 'success', title: '商品設定已更新' });
+        }
+    };
+
+    // ====== 站點生命週期管理 ======
+    window.initVenueSelect = function() {
+        const select = document.getElementById('global-venue-select');
+        select.innerHTML = '';
+        
+        const activeKeys = Object.keys(globalVenues).filter(k => (globalVenues[k].status || 'active') === 'active');
+
+        activeKeys.forEach(vId => { 
+            select.innerHTML += `<option value="${vId}">${globalVenues[vId].name}</option>`; 
+        });
+
+        if (activeKeys.includes(currentVenueId)) {
+            select.value = currentVenueId;
+        } else {
+            currentVenueId = select.value = activeKeys[0] || '';
+        }
+        window.changeVenue();
+    };
+
+    window.promptAddNewVenue = async function() {
+        const { value: venueName } = await Swal.fire({
+            title: '新增發貨站點',
+            input: 'text',
+            inputPlaceholder: '例如：三峽站前快閃攤位',
+            showCancelButton: true,
+            confirmButtonText: '新增',
+            cancelButtonText: '取消'
+        });
+
+        if (venueName && venueName.trim()) {
+            const newKey = `venue_${Date.now()}`;
+            const defaultItems = {};
+            Object.keys(globalCatalog).forEach(pId => {
+                defaultItems[pId] = globalCatalog[pId].price || 0;
+            });
+            await set(ref(db, `venues/${newKey}`), { 
+                name: venueName.trim(), 
+                status: 'active',
+                items: defaultItems 
+            });
+            currentVenueId = newKey;
+            Toast.fire({ icon: 'success', title: `已建立站點「${venueName.trim()}」` });
+        }
+    };
+
+    window.changeVenue = function() {
+        currentVenueId = document.getElementById('global-venue-select').value;
+        if(!currentVenueId || !globalVenues[currentVenueId]) return;
+        currentVenueProducts = [];
+        const vData = globalVenues[currentVenueId];
+        if(vData.items) Object.keys(vData.items).forEach(pId => {
+            if(globalCatalog[pId]) currentVenueProducts.push({ ...globalCatalog[pId], price: vData.items[pId] });
+        });
+        currentVenueProducts.sort((a,b)=>(a.sortOrder||99)-(b.sortOrder||99));
+        window.renderPOSProducts();
+    };
+
+    window.renderConsoleVenues = function() {
+        const list = document.getElementById('console-venue-list');
+        if(!list) return;
+        list.innerHTML = '';
+        const keys = Object.keys(globalVenues);
+        if(keys.length === 0) {
+            list.innerHTML = '<div style="text-align:center; padding:15px; color:#888;">目前無任何站點</div>';
+            return;
+        }
+
+        keys.forEach(k => {
+            const v = globalVenues[k];
+            const isArchived = (v.status || 'active') === 'archived';
+            list.innerHTML += `
+                <div class="console-item ${isArchived ? 'archived' : ''}">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600;">
+                        <input type="checkbox" class="venue-chk" value="${k}" style="width:16px; height:16px;">
+                        <span>${v.name}</span>
+                    </label>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="status-badge ${isArchived ? 'status-archived' : 'status-active'}">
+                            ${isArchived ? '📦 已封存' : '⚡ 啟用中'}
+                        </span>
+                        <button style="border:none; background:none; cursor:pointer; font-size:0.8rem;" onclick="window.singleToggleVenueStatus('${k}')">
+                            ${isArchived ? '↩️解封' : '💤封存'}
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+    };
+
+    window.toggleSelectAllVenues = function() {
+        const chks = document.querySelectorAll('.venue-chk');
+        const allChecked = Array.from(chks).every(c => c.checked);
+        chks.forEach(c => c.checked = !allChecked);
+    };
+
+    window.singleToggleVenueStatus = async function(venueId) {
+        const current = globalVenues[venueId]?.status || 'active';
+        const target = current === 'active' ? 'archived' : 'active';
+        await update(ref(db, `venues/${venueId}`), { status: target });
+        Toast.fire({ icon: 'success', title: `站點已變更為「${target === 'active' ? '啟用' : '封存'}」` });
+    };
+
+    window.batchToggleVenueStatus = async function(targetStatus) {
+        const selected = Array.from(document.querySelectorAll('.venue-chk:checked')).map(c => c.value);
+        if(selected.length === 0) return Swal.fire({ icon: 'info', title: '請先勾選目標地點！' });
+
+        for(const vId of selected) {
+            await update(ref(db, `venues/${vId}`), { status: targetStatus });
+        }
+        Toast.fire({ icon: 'success', title: `已批次${targetStatus === 'active' ? '啟用' : '封存'} ${selected.length} 個站點` });
+    };
+
+    // ====== 商品卡牌顯示調配 ======
+    window.openCardDisplayModal = async function() {
+        const { value: formValues } = await Swal.fire({
+            title: '🎨 商品卡牌顯示調配',
+            html: `
+                <div style="display:flex; flex-direction:column; gap:12px; text-align:left; padding:5px 10px;">
+                    <label style="display:flex; align-items:center; justify-content:space-between; font-weight:bold; font-size:0.9rem;">
+                        <span>💰 顯示結帳區品項售價 ($)</span>
+                        <input type="checkbox" id="swal-cfg-price" ${cardDisplayConfig.showPrice ? 'checked' : ''} style="width:20px; height:20px;">
+                    </label>
+                    <label style="display:flex; align-items:center; justify-content:space-between; font-weight:bold; font-size:0.9rem;">
+                        <span>🎨 啟用類別色彩標記 (羊奶等)</span>
+                        <input type="checkbox" id="swal-cfg-cat" ${cardDisplayConfig.showCategoryColor ? 'checked' : ''} style="width:20px; height:20px;">
+                    </label>
+                    <label style="display:flex; align-items:center; justify-content:space-between; font-weight:bold; font-size:0.9rem;">
+                        <span>📑 核銷卡牌顯示合約單價備註</span>
+                        <input type="checkbox" id="swal-cfg-contract" ${cardDisplayConfig.showContractPrice ? 'checked' : ''} style="width:20px; height:20px;">
+                    </label>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '儲存設定',
+            cancelButtonText: '取消',
+            focusConfirm: false,
+            preConfirm: () => {
+                return {
+                    showPrice: document.getElementById('swal-cfg-price').checked,
+                    showCategoryColor: document.getElementById('swal-cfg-cat').checked,
+                    showContractPrice: document.getElementById('swal-cfg-contract').checked
+                };
+            }
+        });
+
+        if (formValues) {
+            await set(ref(db, 'settings_card_display'), formValues);
+            Toast.fire({ icon: 'success', title: '顯示設定已更新' });
+        }
+    };
+
+    // ====== 折扣設定 ======
+    window.openDiscountModal = async function() {
+        const { value: result } = await Swal.fire({
+            title: '🎟️ 設定訂單折扣',
+            html: `
+                <div style="font-size:0.85rem; color:#666; margin-bottom:12px;">選擇快捷折扣或自行輸入：</div>
+                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
+                    <button type="button" class="swal-quick-btn" onclick="document.getElementById('swal-discount-input').value = 0">$0</button>
+                    <button type="button" class="swal-quick-btn" onclick="document.getElementById('swal-discount-input').value = 10">-$10</button>
+                    <button type="button" class="swal-quick-btn" onclick="document.getElementById('swal-discount-input').value = 20">-$20</button>
+                    <button type="button" class="swal-quick-btn" onclick="document.getElementById('swal-discount-input').value = 30">-$30</button>
+                    <button type="button" class="swal-quick-btn" onclick="document.getElementById('swal-discount-input').value = 40">-$40</button>
+                    <button type="button" class="swal-quick-btn" onclick="document.getElementById('swal-discount-input').value = 50">-$50</button>
+                </div>
+                <input id="swal-discount-input" type="number" class="swal2-input" style="width:80%; margin:0 auto;" placeholder="其他自訂金額" value="${currentDiscount || ''}">
+            `,
+            showCancelButton: true,
+            confirmButtonText: '套用',
+            cancelButtonText: '取消',
+            focusConfirm: false,
+            preConfirm: () => {
+                const val = document.getElementById('swal-discount-input').value;
+                return parseInt(val, 10) || 0;
+            }
+        });
+
+        if (result !== undefined) {
+            currentDiscount = Math.max(0, result);
+            window.updateCart();
+            Toast.fire({ icon: 'info', title: `已套用折扣: -$${currentDiscount}` });
+        }
+    };
+
+    // ====== POS 與 購物車 ======
+    window.renderPOSProducts = function() {
+        const grid = document.getElementById('product-grid'); 
+        grid.innerHTML = '';
+        currentVenueProducts.forEach(p => {
+            const btn = document.createElement('div');
+            const catClass = cardDisplayConfig.showCategoryColor ? p.cat : '';
+            btn.className = `btn-product ${catClass}`;
+            btn.onclick = () => window.addToCart(p);
+            
+            const priceHtml = cardDisplayConfig.showPrice ? `<div class="p-price">$${p.price}</div>` : '';
+            btn.innerHTML = `<div>${p.name}</div>${priceHtml}`;
+            grid.appendChild(btn);
+        });
+    };
+
+    window.addToCart = function(product) {
+        if(cart[product.id]) cart[product.id].qty++; else cart[product.id] = {qty: 1, item: product};
+        window.updateCart();
+    };
+    window.minusCart = function(id) { if(cart[id] && cart[id].qty > 1) cart[id].qty--; else delete cart[id]; window.updateCart(); };
+    window.plusCart = function(id) { if(cart[id]) cart[id].qty++; window.updateCart(); };
+
+    window.updateCart = function() {
+        const list = document.getElementById('cart-list');
+        const ids = Object.keys(cart); let subtotal = 0;
+        list.innerHTML = ids.length === 0 ? '<div style="text-align:center; padding:20px; color:#8e8e93;">購物車空空如也</div>' : '';
+        
+        ids.forEach(id => {
+            const c = cart[id]; subtotal += c.item.price * c.qty;
+            list.innerHTML += `<div class="cart-item"><div><b>${c.item.name}</b><br><small>$${c.item.price} × ${c.qty}</small></div>
+            <div class="qty-controls"><button class="qty-btn" onclick="window.minusCart('${id}')">-</button><b>${c.qty}</b><button class="qty-btn" onclick="window.plusCart('${id}')">+</button></div></div>`;
+        });
+        
+        currentCartTotal = subtotal - currentDiscount;
+        if(currentCartTotal < 0) currentCartTotal = 0;
+        
+        document.getElementById('total-price').innerText = currentCartTotal;
+        document.getElementById('discount-val').innerText = currentDiscount;
+        
+        const btnCheckout = document.getElementById('btn-checkout');
+        const btnPreorder = document.getElementById('btn-preorder');
+        if(ids.length > 0) {
+            btnCheckout.classList.remove('btn-disabled');
+            btnPreorder.classList.remove('btn-disabled');
+        } else {
+            btnCheckout.classList.add('btn-disabled');
+            btnPreorder.classList.add('btn-disabled');
+        }
+    };
+
+    window.checkout = async function() {
+        if(Object.keys(cart).length === 0) return;
+        let totalCost = 0, itemsForRecord = [];
+        Object.keys(cart).forEach(id => {
+            const c = cart[id]; totalCost += (c.item.cost||0)*c.qty;
+            itemsForRecord.push(`${c.item.name}x${c.qty}`);
+        });
+
+        const venueName = globalVenues[currentVenueId]?.name || '未指定';
+        const orderData = {
+            time: new Date().toLocaleTimeString('zh-TW', {hour: '2-digit', minute:'2-digit'}),
+            dateStr: window.globalDateStr, monthStr: window.globalDateStr.substring(0, 7), timestamp: Date.now(),
+            module: venueName, items: itemsForRecord.join(', '), discount: currentDiscount,
+            revenue: currentCartTotal, profit: currentCartTotal - totalCost, cartData: cart,
+            crmType: '現場結帳', crmDemo: '' // 已移除標籤邏輯
+        };
+
+        await push(dbRefs.orders, orderData);
+        cart = {}; currentDiscount = 0; window.updateCart();
+        Toast.fire({ icon: 'success', title: `結帳成功 $${orderData.revenue}` });
+    };
+
+    // ====== 預購登記 (欄位結構化) ======
+    window.openPreorderModal = async function() {
+        if(Object.keys(cart).length === 0) return;
+
+        let venueOptionsHtml = '';
+        Object.keys(globalVenues)
+            .filter(vId => (globalVenues[vId].status || 'active') === 'active')
+            .forEach(vId => {
+                venueOptionsHtml += `<option value="${vId}" ${vId === currentVenueId ? 'selected' : ''}>${globalVenues[vId].name}</option>`;
+            });
+
+        let bigQty = 0, bigPrice = 120, midQty = 0, midPrice = 65;
+        
+        // 嘗試自動帶入購物車中的大/中羊奶價格與數量
+        const bigMatchId = Object.keys(cart).find(k => cart[k].item.name.includes('大羊奶'));
+        if(bigMatchId) { bigQty = cart[bigMatchId].qty; bigPrice = cart[bigMatchId].item.price; }
+        const midMatchId = Object.keys(cart).find(k => cart[k].item.name.includes('中羊奶'));
+        if(midMatchId) { midQty = cart[midMatchId].qty; midPrice = cart[midMatchId].item.price; }
+
+        const { value: formValues } = await Swal.fire({
+            title: `登記預購單`,
+            html: `
+                <div style="display:flex; flex-direction:column; gap:8px; text-align:left;">
+                    <label style="font-size:0.8rem; font-weight:bold;">姓名 / 暱稱 (必填)</label>
+                    <input id="swal-po-name" class="swal2-input" style="width:100%; margin:0;" placeholder="姓名">
+                    <label style="font-size:0.8rem; font-weight:bold;">電話 (選填)</label>
+                    <input id="swal-po-phone" type="tel" class="swal2-input" style="width:100%; margin:0;" placeholder="電話">
+                    <label style="font-size:0.8rem; font-weight:bold;">預定日期 (僅日期)</label>
+                    <input id="swal-po-date" type="date" class="swal2-input" style="width:100%; margin:0;" value="${window.globalDateStr}">
+                    <label style="font-size:0.8rem; font-weight:bold;">發貨地點</label>
+                    <select id="swal-po-venue" class="swal2-select" style="width:100%; margin:0; display:block;">${venueOptionsHtml}</select>
+                    
+                    <div style="background:#f8fafc; padding:8px; border-radius:6px; margin-top:5px; border:1px solid #e2e8f0;">
+                        <b style="font-size:0.85rem;">🥛 訂購品項與合約單價</b>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:4px;">
+                            <div>大羊奶: <input id="swal-po-big-qty" type="number" style="width:50px;" value="${bigQty}"> 瓶</div>
+                            <div>單價: $<input id="swal-po-big-price" type="number" style="width:50px;" value="${bigPrice}"></div>
+                            <div>中羊奶: <input id="swal-po-mid-qty" type="number" style="width:50px;" value="${midQty}"> 瓶</div>
+                            <div>單價: $<input id="swal-po-mid-price" type="number" style="width:50px;" value="${midPrice}"></div>
+                        </div>
+                    </div>
+
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:var(--cold-txt); background:var(--cold-bg); padding:6px 8px; border-radius:6px; cursor:pointer;">
+                        <input type="checkbox" id="swal-po-family"> ❄️ 全家冷藏寄放
+                    </label>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '登記送出',
+            cancelButtonText: '取消',
+            focusConfirm: false,
+            preConfirm: () => {
+                const name = document.getElementById('swal-po-name').value.trim();
+                const phone = document.getElementById('swal-po-phone').value.trim();
+                const dateStr = document.getElementById('swal-po-date').value;
+                const venueId = document.getElementById('swal-po-venue').value;
+                const isFamily = document.getElementById('swal-po-family').checked;
+                
+                const bQty = parseInt(document.getElementById('swal-po-big-qty').value, 10) || 0;
+                const bPrice = parseFloat(document.getElementById('swal-po-big-price').value) || 0;
+                const mQty = parseInt(document.getElementById('swal-po-mid-qty').value, 10) || 0;
+                const mPrice = parseFloat(document.getElementById('swal-po-mid-price').value) || 0;
+
+                if (!name) return Swal.showValidationMessage('請輸入姓名！');
+                if (!dateStr) return Swal.showValidationMessage('請選擇日期！');
+                return { name, phone, dateStr, venueId, isFamily, bQty, bPrice, mQty, mPrice };
+            }
+        });
+
+        if (formValues) {
+            const rev = (formValues.bQty * formValues.bPrice) + (formValues.mQty * formValues.mPrice);
+            const itemsList = [];
+            const cartData = {};
+
+            if(formValues.bQty > 0) {
+                itemsList.push(`大羊奶 x ${formValues.bQty} ($${formValues.bPrice})`);
+                cartData['prod_big'] = { item: { id: 'prod_big', name: '大羊奶', price: formValues.bPrice, cost: 0 }, qty: formValues.bQty };
+            }
+            if(formValues.mQty > 0) {
+                itemsList.push(`中羊奶 x ${formValues.mQty} ($${formValues.mPrice})`);
+                cartData['prod_mid'] = { item: { id: 'prod_mid', name: '中羊奶', price: formValues.mPrice, cost: 0 }, qty: formValues.mQty };
+            }
+
+            const uniqueKey = `${formValues.dateStr}_${formValues.name}_${globalVenues[formValues.venueId]?.name || ''}`.replace(/[\.\#\$\/\[\]]/g, '_');
+
+            const pickupData = {
+                id: uniqueKey,
+                nickname: formValues.name,
+                phone: formValues.phone,
+                dateStr: formValues.dateStr,
+                venueId: formValues.venueId,
+                venueName: globalVenues[formValues.venueId]?.name || '未指定',
+                isFamily: formValues.isFamily,
+                bigQty: formValues.bQty,
+                bigPrice: formValues.bPrice,
+                midQty: formValues.mQty,
+                midPrice: formValues.mPrice,
+                items: itemsList.join('\n'),
+                revenue: rev,
+                profit: rev * 0.4,
+                cartData: cartData,
+                discount: currentDiscount,
+                status: 'pending',
+                timestamp: Date.now()
+            };
+
+            await set(ref(db, `pickups/${uniqueKey}`), pickupData);
+            cart = {}; currentDiscount = 0; window.updateCart();
+            Toast.fire({ icon: 'success', title: '預購單已建立' });
+        }
+    };
+
+    // ====== 高密度訂單卡牌渲染 ======
+    window.renderFulfillment = function() {
+        const list = document.getElementById('fulfillment-list');
+        list.innerHTML = '';
+        
+        let threeDays = getThreeDaysWindow(window.globalDateStr);
+
+        let keys = Object.keys(globalPickups).filter(k => {
+            const p = globalPickups[k];
+            if (p.status === 'pending' && threeDays.includes(p.dateStr)) return true;
+            if (p.status === 'completed' && p.dateStr === window.globalDateStr) return true;
+            return false;
+        });
+
+        keys.sort((a, b) => {
+            const pa = globalPickups[a]; const pb = globalPickups[b];
+            if (pa.status !== pb.status) return pa.status === 'pending' ? -1 : 1;
+            if (pa.dateStr !== pb.dateStr) return pa.dateStr.localeCompare(pb.dateStr);
+            return (pa.timestamp || 0) - (pb.timestamp || 0);
+        });
+
+        if (keys.length === 0) {
+            list.innerHTML = '<div style="grid-column: span 2; text-align:center; padding:30px; color:#8e8e93; font-weight:bold;">近三天無待處理預購清單</div>';
+            return;
+        }
+
+        keys.forEach((key, index) => {
+            const p = globalPickups[key];
+            const isDone = p.status === 'completed';
+            const seqStr = `#${pad(index + 1)}`;
+            const shortDate = p.dateStr ? p.dateStr.substring(5).replace('-', '/') : '';
+            const familyBadge = p.isFamily ? '<span class="ff-cold-tag">❄️冷藏</span>' : '';
+
+            // 動態產生品項字串（依據卡牌設定是否揭露單價）
+            let itemsSummary = '';
+            if (p.bigQty > 0) {
+                itemsSummary += `大羊奶 x ${p.bigQty} ${cardDisplayConfig.showContractPrice ? `($${p.bigPrice||120})` : ''}\n`;
+            }
+            if (p.midQty > 0) {
+                itemsSummary += `中羊奶 x ${p.midQty} ${cardDisplayConfig.showContractPrice ? `($${p.midPrice||65})` : ''}`;
+            }
+            if (!itemsSummary.trim()) itemsSummary = p.items || '無品項明細';
+
+            const actionBtn = isDone 
+                ? `<button class="btn-fast-fulfill is-done">✓ 已發貨</button>` 
+                : `<button class="btn-fast-fulfill" onclick="event.stopPropagation(); window.fastFulfillPickup('${key}')">⚡ 發貨</button>`;
+
+            list.innerHTML += `
+                <div class="ff-card ${isDone ? 'done' : ''}" onclick="window.openEditModal('${key}')">
+                    <div class="ff-row-1">
+                        <div class="ff-meta">
+                            <span class="ff-seq-badge">${seqStr}</span>
+                            <span class="ff-venue-badge">📍 ${p.venueName}</span>
+                            <span class="ff-date-text">📅 ${shortDate}</span>
+                        </div>
+                        <div>${actionBtn}</div>
+                    </div>
+                    
+                    <div class="ff-row-2">
+                        <span>👤 ${p.nickname} ${familyBadge}</span>
+                        <span style="font-size:0.85rem; color:var(--text-muted);">$${p.revenue || 0}</span>
+                    </div>
+
+                    <div class="ff-row-3">${itemsSummary.trim()}</div>
+                </div>
+            `;
+        });
+    };
+
+    window.fastFulfillPickup = async function(key) {
+        const p = globalPickups[key];
+        if(!p || p.status === 'completed') return;
+
+        const orderData = {
+            time: new Date().toLocaleTimeString('zh-TW', {hour: '2-digit', minute:'2-digit'}),
+            dateStr: window.globalDateStr, 
+            monthStr: window.globalDateStr.substring(0, 7),
+            timestamp: Date.now(),
+            module: p.venueName,
+            items: `[預購] ${p.items ? p.items.replace(/\n/g, ', ') : ''}`,
+            discount: p.discount || 0,
+            revenue: p.revenue,
+            profit: p.profit || (p.revenue * 0.4), 
+            cartData: p.cartData || {},
+            crmType: '預約自取',
+            crmDemo: p.isFamily ? '全家冷藏' : '',
+            pickupKey: key
+        };
+
+        const newOrderRef = await push(dbRefs.orders, orderData);
+        await update(ref(db, `pickups/${key}`), { 
+            status: 'completed',
+            completedOrderId: newOrderRef.key 
+        });
+
+        Toast.fire({ icon: 'success', title: `[${p.nickname}] 發貨成功！已入帳 $${p.revenue}` });
+    };
+
+    // ====== 歷史紀錄與復原 ======
+    window.updateHistory = function() {
+        const list = document.getElementById('history-list'); list.innerHTML = '';
+        let keys = Object.keys(globalOrders).filter(k => {
+            let oDate = globalOrders[k].dateStr;
+            if(!oDate && globalOrders[k].timestamp) {
+                let d = new Date(globalOrders[k].timestamp);
+                oDate = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+            }
+            return oDate === window.globalDateStr;
+        });
+        
+        if(keys.length === 0) {
+            list.innerHTML = `<div style="grid-column: span 2; text-align:center; padding: 30px; color:#8e8e93;">本日無銷售紀錄</div>`;
+            return;
+        }
+        
+        keys.sort((a, b) => (globalOrders[b].timestamp || 0) - (globalOrders[a].timestamp || 0)).forEach(orderKey => {
+            const o = globalOrders[orderKey];
+            const canRevert = !!o.pickupKey;
+
+            list.innerHTML += `
+                <div class="record-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <small style="color:var(--text-muted);">🕒 ${o.time || ''}</small>
+                        <small style="background:#f2f2f7; color:var(--text-main); padding:2px 6px; border-radius:4px; font-weight:bold;">${o.module || '未指定'}</small>
+                    </div>
+                    <div style="font-size:0.85rem; font-weight:bold; color:var(--text-main); line-height:1.35;">
+                        ${o.items || '無商品資訊'}
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                        <small style="color:#8e8e93;">折 -$${o.discount || 0}</small>
+                        <b style="font-size: 1.15rem; color: var(--primary);">$${o.revenue || 0}</b>
+                    </div>
+                    ${canRevert ? `<button class="btn-revert" onclick="window.revertPickupOrder('${orderKey}', '${o.pickupKey}')">↩️ 發貨失誤？一鍵復原回待出貨</button>` : ''}
+                </div>`;
+        });
+    };
+
+    window.revertPickupOrder = async function(orderKey, pickupKey) {
+        const res = await Swal.fire({
+            title: '確定復原此筆發貨？',
+            text: '將扣減此筆營業額，並將該客戶重新變更為「待發貨」狀態！',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ff3b30',
+            confirmButtonText: '確定復原',
+            cancelButtonText: '取消'
+        });
+
+        if (res.isConfirmed) {
+            await remove(ref(db, `pos_orders/${orderKey}`));
+            if (pickupKey) {
+                await update(ref(db, `pickups/${pickupKey}`), { 
+                    status: 'pending',
+                    completedOrderId: null 
+                });
+            }
+            Toast.fire({ icon: 'success', title: '已成功撤銷並復原訂單' });
+        }
+    };
+
+    // ====== 編輯預購單 (數值化欄位，徹底解決運算失常) ======
+    window.openEditModal = async function(key) {
+        const p = globalPickups[key];
+        if(!p || p.status === 'completed') return;
+
+        let venueOptionsHtml = '';
+        Object.keys(globalVenues)
+            .filter(vId => (globalVenues[vId].status || 'active') === 'active')
+            .forEach(vId => {
+                venueOptionsHtml += `<option value="${vId}" ${vId === p.venueId ? 'selected' : ''}>${globalVenues[vId].name}</option>`;
+            });
+
+        let curBQty = p.bigQty ?? 0;
+        let curBPrice = p.bigPrice ?? 120;
+        let curMQty = p.midQty ?? 0;
+        let curMPrice = p.midPrice ?? 65;
+
+        const { value: action, isConfirmed, isDenied } = await Swal.fire({
+            title: '編輯預約訂單',
+            html: `
+                <div style="display:flex; flex-direction:column; gap:8px; text-align:left;">
+                    <label style="font-size:0.8rem; font-weight:bold;">姓名</label>
+                    <input id="swal-edit-name" class="swal2-input" style="width:100%; margin:0;" value="${p.nickname || ''}">
+                    <label style="font-size:0.8rem; font-weight:bold;">預定日期</label>
+                    <input id="swal-edit-date" type="date" class="swal2-input" style="width:100%; margin:0;" value="${p.dateStr || ''}">
+                    <label style="font-size:0.8rem; font-weight:bold;">發貨地點</label>
+                    <select id="swal-edit-venue" class="swal2-select" style="width:100%; margin:0; display:block;">${venueOptionsHtml}</select>
+                    
+                    <div style="background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0; margin-top:5px;">
+                        <b style="font-size:0.85rem;">🥛 數量與單價精確調配</b>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
+                            <div>大羊奶: <input id="swal-edit-bqty" type="number" style="width:50px;" value="${curBQty}"> 瓶</div>
+                            <div>單價: $<input id="swal-edit-bprice" type="number" style="width:50px;" value="${curBPrice}"></div>
+                            <div>中羊奶: <input id="swal-edit-mqty" type="number" style="width:50px;" value="${curMQty}"> 瓶</div>
+                            <div>單價: $<input id="swal-edit-mprice" type="number" style="width:50px;" value="${curMPrice}"></div>
+                        </div>
+                    </div>
+
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:var(--cold-txt); background:var(--cold-bg); padding:8px; border-radius:6px; cursor:pointer;">
+                        <input type="checkbox" id="swal-edit-family" ${p.isFamily ? 'checked' : ''}> ❄️ 全家冷藏寄放
+                    </label>
+                </div>
+            `,
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: '儲存',
+            denyButtonText: '刪除',
+            cancelButtonText: '取消',
+            preConfirm: () => {
+                const bq = parseInt(document.getElementById('swal-edit-bqty').value, 10) || 0;
+                const bp = parseFloat(document.getElementById('swal-edit-bprice').value) || 0;
+                const mq = parseInt(document.getElementById('swal-edit-mqty').value, 10) || 0;
+                const mp = parseFloat(document.getElementById('swal-edit-mprice').value) || 0;
+
+                return {
+                    name: document.getElementById('swal-edit-name').value.trim(),
+                    dateStr: document.getElementById('swal-edit-date').value,
+                    venueId: document.getElementById('swal-edit-venue').value,
+                    isFamily: document.getElementById('swal-edit-family').checked,
+                    bigQty: bq, bigPrice: bp, midQty: mq, midPrice: mp
+                };
+            }
+        });
+
+        if (isConfirmed && action) {
+            const newRev = (action.bigQty * action.bigPrice) + (action.midQty * action.midPrice);
+            const items = [];
+            const cartData = {};
+
+            if(action.bigQty > 0) {
+                items.push(`大羊奶 x ${action.bigQty} ($${action.bigPrice})`);
+                cartData['prod_big'] = { item: { id: 'prod_big', name: '大羊奶', price: action.bigPrice, cost: 0 }, qty: action.bigQty };
+            }
+            if(action.midQty > 0) {
+                items.push(`中羊奶 x ${action.midQty} ($${action.midPrice})`);
+                cartData['prod_mid'] = { item: { id: 'prod_mid', name: '中羊奶', price: action.midPrice, cost: 0 }, qty: action.midQty };
+            }
+
+            await update(ref(db, `pickups/${key}`), {
+                nickname: action.name,
+                dateStr: action.dateStr,
+                venueId: action.venueId,
+                venueName: globalVenues[action.venueId]?.name || '未指定',
+                isFamily: action.isFamily,
+                bigQty: action.bigQty,
+                bigPrice: action.bigPrice,
+                midQty: action.midQty,
+                midPrice: action.midPrice,
+                revenue: newRev,
+                profit: newRev * 0.4,
+                items: items.join('\n'),
+                cartData: cartData
+            });
+            Toast.fire({ icon: 'success', title: '更新成功，金額已重新核算' });
+        } else if (isDenied) {
+            await remove(ref(db, `pickups/${key}`));
+            Toast.fire({ icon: 'info', title: '已刪除預約單' });
+        }
+    };
+
+    // ====== 盤點配貨數量與庫存狀態比對 ======
+    window.renderInventoryCheck = function() {
+        const body = document.getElementById('inventory-check-body');
+        const baseDateEl = document.getElementById('inv-base-date');
+        if(!body) return;
+        if(baseDateEl) baseDateEl.innerText = window.globalDateStr;
+        body.innerHTML = '';
+
+        let demand = { prod_big: 0, prod_mid: 0 };
+
+        Object.values(globalPickups).forEach(p => {
+            if(p.status === 'pending' && p.dateStr === window.globalDateStr) {
+                demand.prod_big += (p.bigQty || 0);
+                demand.prod_mid += (p.midQty || 0);
+            }
+        });
+
+        const itemsMeta = [
+            { id: 'prod_big', name: '大羊奶 (瓶)' },
+            { id: 'prod_mid', name: '中羊奶 (瓶)' }
+        ];
+
+        itemsMeta.forEach(meta => {
+            const need = demand[meta.id] || 0;
+            const stock = currentInventory[meta.id] || 0;
+            const diff = stock - need;
+            const isSufficient = diff >= 0;
+
+            body.innerHTML += `
+                <tr>
+                    <td style="text-align:left; font-weight:bold;">${meta.name}</td>
+                    <td style="font-weight:900; color:var(--primary); font-size:1.05rem;">${need}</td>
+                    <td>
+                        <input type="number" class="inv-input" id="inv-stock-${meta.id}" value="${stock}" onchange="window.updateLocalStock('${meta.id}', this.value)">
+                    </td>
+                    <td style="font-weight:bold; color:${diff < 0 ? 'var(--danger)' : '#15803d'};">
+                        ${diff > 0 ? '+'+diff : diff}
+                    </td>
+                    <td>
+                        <span class="inv-status ${isSufficient ? 'ok' : 'warn'}">
+                            ${isSufficient ? '充足' : '缺 ' + Math.abs(diff)}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        });
+    };
+
+    window.updateLocalStock = function(id, val) {
+        currentInventory[id] = parseInt(val, 10) || 0;
+        window.renderInventoryCheck();
+    };
+
+    window.saveCurrentInventory = async function() {
+        await set(ref(db, 'inventory_stocks'), currentInventory);
+        Toast.fire({ icon: 'success', title: '現有庫存已同步儲存' });
+    };
+
+    // ====== 總量統計 (未來三天備貨) ======
+    window.renderFfStats = function() {
+        const container = document.getElementById('fulfillment-stats-container');
+        container.innerHTML = '';
+        
+        let threeDays = getThreeDaysWindow(window.globalDateStr);
+        let labels = ['📌 今日', '📌 明日', '📌 後天'];
+        let statsByDate = {};
+        threeDays.forEach(d => statsByDate[d] = { '大羊奶': 0, '中羊奶': 0 });
+
+        let pendingKeys = Object.keys(globalPickups).filter(k => {
+            const p = globalPickups[k];
+            return p.status === 'pending' && threeDays.includes(p.dateStr);
+        });
+
+        pendingKeys.forEach(k => {
+            const p = globalPickups[k];
+            statsByDate[p.dateStr]['大羊奶'] += (p.bigQty || 0);
+            statsByDate[p.dateStr]['中羊奶'] += (p.midQty || 0);
+        });
+
+        let isEmpty = true;
+        threeDays.forEach((d, idx) => {
+            const dayStats = statsByDate[d];
+            const hasItems = dayStats['大羊奶'] > 0 || dayStats['中羊奶'] > 0;
+            if (!hasItems) return;
+            
+            isEmpty = false;
+            let html = `
+                <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="background: var(--text-main); color: white; padding: 6px 12px; font-weight: bold; font-size: 0.9rem;">
+                        ${labels[idx]} (${d.substring(5).replace('-', '/')})
+                    </div>
+                    <div style="padding: 10px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+                        <div style="background: var(--bg-color); padding: 8px 10px; border-radius: 6px; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:0.85rem; font-weight:bold;">大羊奶</span>
+                            <span style="font-size:1.15rem; font-weight:900; color:var(--primary);">${dayStats['大羊奶']}</span>
+                        </div>
+                        <div style="background: var(--bg-color); padding: 8px 10px; border-radius: 6px; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:0.85rem; font-weight:bold;">中羊奶</span>
+                            <span style="font-size:1.15rem; font-weight:900; color:var(--primary);">${dayStats['中羊奶']}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML += html;
+        });
+
+        if (isEmpty) {
+            container.innerHTML = `<div style="text-align:center; padding:20px; background:white; border-radius:8px; color:var(--success); font-weight:bold;">🎉 近三天無未備貨品項！</div>`;
+        }
+    };
+
+    // ====== 指定工作表名稱匯入 ======
+    window.openGoogleSheetImporter = async function() {
+        const defaultPubUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQdNHbc1JRdEzfMo3wdKj8TWOKWosB4uPSvWHuL6MzJAh_jQ-erOrABrTUve6E6FzforoXjCOUAib6q/pub";
+
+        const { value: formValues } = await Swal.fire({
+            title: '📑 依工作表名稱匯入客群',
+            html: `
+                <div style="text-align:left; font-size:0.8rem; color:#555; margin-bottom:8px;">
+                    請輸入 Google 試算表網址與欲讀取的<b>工作表名稱</b>（例如：<code>週一A組</code>）：
+                </div>
+                <input id="swal-gs-url" class="swal2-input" style="width:100%; font-size:0.8rem; margin:0 0 8px;" value="${defaultPubUrl}" placeholder="試算表網址">
+                <input id="swal-gs-sheet" class="swal2-input" style="width:100%; font-size:0.85rem; margin:0 0 10px;" value="工作表1" placeholder="工作表名稱 (例如：週一A組)">
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--primary); font-weight:bold; cursor:pointer;">
+                    <input type="checkbox" id="swal-save-template" checked> 同步儲存為「固定週期模組」（以便日後一鍵導入）
+                </label>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '開始匯入',
+            cancelButtonText: '取消',
+            preConfirm: () => {
+                const u = document.getElementById('swal-gs-url').value.trim();
+                const s = document.getElementById('swal-gs-sheet').value.trim();
+                const saveTpl = document.getElementById('swal-save-template').checked;
+                if (!u) return Swal.showValidationMessage('請輸入試算表網址！');
+                if (!s) return Swal.showValidationMessage('請輸入指定的工作表名稱！');
+                return { url: u, sheet: s, saveTpl };
+            }
+        });
+
+        if (formValues) {
+            Swal.fire({ title: `正在讀取 [${formValues.sheet}] 清單...`, didOpen: () => Swal.showLoading() });
+
+            try {
+                let csvUrl = formValues.url;
+                const sheetParam = encodeURIComponent(formValues.sheet);
+                
+                if (csvUrl.includes('/pub')) {
+                    const baseUrl = csvUrl.split('?')[0];
+                    csvUrl = `${baseUrl}?output=csv&sheet=${sheetParam}`;
+                } else {
+                    const match = csvUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                    if (!match || !match[1]) throw new Error('無法解析試算表網址！');
+                    csvUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq?tqx=out:csv&sheet=${sheetParam}`;
+                }
+
+                const response = await fetch(csvUrl);
+                if (!response.ok) throw new Error(`讀取工作表「${formValues.sheet}」失敗，請確認名稱是否正確且已公開發布！`);
+                const csvText = await response.text();
+
+                const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
+                if (lines.length < 2) throw new Error(`工作表 [${formValues.sheet}] 內無有效資料列！`);
+
+                const headers = lines[0].split(',').map(h => h.replace(/^["']|["']$/g, '').trim());
+                const findIdx = (keys) => headers.findIndex(h => keys.some(k => h.includes(k)));
+
+                const idxDate = findIdx(['日期', 'date']);
+                const idxName = findIdx(['姓名', 'name', '顧客', '購物者']);
+                const idxPhone = findIdx(['電話', 'phone']);
+                const idxVenue = findIdx(['地區', '站點', '地點', '門市', 'venue']);
+                
+                const idxBigQty = findIdx(['大羊奶數量', '大羊奶(瓶)', '大瓶數量', '大羊奶', 'bigQty']);
+                const idxBigPrice = findIdx(['大羊奶單價', '大羊奶價格', '大瓶單價', 'bigPrice']);
+                const idxMidQty = findIdx(['中羊奶數量', '中羊奶(瓶)', '中瓶數量', '中羊奶', 'midQty']);
+                const idxMidPrice = findIdx(['中羊奶單價', '中羊奶價格', '中瓶單價', 'midPrice']);
+                const idxFamily = findIdx(['冷藏', '寄放', 'family']);
+
+                if (idxName === -1) throw new Error('找不到「姓名 / 顧客」欄位！');
+
+                let count = 0;
+                const now = Date.now();
+                let templateOrders = [];
+
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v ? v.replace(/^["']\vert{}["']$/g, '').trim() : '');
+                    
+                    const name = cols[idxName] || '';
+                    if (!name) continue;
+
+                    const dateStr = (idxDate !== -1 && cols[idxDate]) ? cols[idxDate] : window.globalDateStr;
+                    const phone = idxPhone !== -1 ? cols[idxPhone] : '';
+                    const venueName = (idxVenue !== -1 && cols[idxVenue]) ? cols[idxVenue] : '未指定站點';
+                    
+                    const bigQty = idxBigQty !== -1 ? (parseInt(cols[idxBigQty], 10) || 0) : 0;
+                    const bigPrice = idxBigPrice !== -1 ? (parseFloat(cols[idxBigPrice]) || 120) : 120;
+                    const midQty = idxMidQty !== -1 ? (parseInt(cols[idxMidQty], 10) || 0) : 0;
+                    const midPrice = idxMidPrice !== -1 ? (parseFloat(cols[idxMidPrice]) || 65) : 65;
+                    const isFamily = idxFamily !== -1 ? (cols[idxFamily].includes('是') || cols[idxFamily].toLowerCase() === 'true') : false;
+
+                    if (bigQty === 0 && midQty === 0) continue;
+
+                    let revenue = (bigQty * bigPrice) + (midQty * midPrice);
+                    let items = [];
+                    let cartData = {};
+
+                    if (bigQty > 0) {
+                        items.push(`大羊奶 x ${bigQty} ($${bigPrice})`);
+                        cartData['prod_big'] = { item: { id: 'prod_big', name: '大羊奶', price: bigPrice, cost: 0 }, qty: bigQty };
+                    }
+                    if (midQty > 0) {
+                        items.push(`中羊奶 x ${midQty} ($${midPrice})`);
+                        cartData['prod_mid'] = { item: { id: 'prod_mid', name: '中羊奶', price: midPrice, cost: 0 }, qty: midQty };
+                    }
+
+                    let venueId = Object.keys(globalVenues).find(k => globalVenues[k].name === venueName);
+                    if (!venueId) {
+                        venueId = `venue_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+                        await set(ref(db, `venues/${venueId}`), { name: venueName, status: 'active', items: {} });
+                    }
+
+                    const uniqueKey = `${dateStr}_${name}_${venueName}`.replace(/[\.\#\$\/\[\]]/g, '_');
+                    const existingPickup = globalPickups[uniqueKey];
+
+                    const pickupRecord = {
+                        id: uniqueKey,
+                        nickname: name,
+                        phone: phone,
+                        dateStr: dateStr,
+                        venueId: venueId,
+                        venueName: venueName,
+                        isFamily: isFamily,
+                        bigQty: bigQty,
+                        bigPrice: bigPrice,
+                        midQty: midQty,
+                        midPrice: midPrice,
+                        items: items.join('\n'),
+                        revenue: revenue,
+                        profit: revenue * 0.4,
+                        cartData: cartData,
+                        discount: 0,
+                        status: 'pending',
+                        timestamp: now + i
+                    };
+
+                    if (!existingPickup || existingPickup.status !== 'completed') {
+                        await set(ref(db, `pickups/${uniqueKey}`), pickupRecord);
+                        count++;
+                    }
+
+                    templateOrders.push({
+                        nickname: name,
+                        phone: phone,
+                        venueName: venueName,
+                        isFamily: isFamily,
+                        bigQty: bigQty,
+                        bigPrice: bigPrice,
+                        midQty: midQty,
+                        midPrice: midPrice
+                    });
+                }
+
+                if (formValues.saveTpl && templateOrders.length > 0) {
+                    const tplKey = formValues.sheet.replace(/[\.\#\$\/\[\]]/g, '_');
+                    await set(ref(db, `system_templates/${tplKey}`), {
+                        title: formValues.sheet,
+                        orders: templateOrders,
+                        updatedAt: Date.now()
+                    });
+                }
+
+                Swal.fire({
+                    icon: 'success',
+                    title: '工作表名單匯入成功！',
+                    html: `已從 <b>[${formValues.sheet}]</b> 載入 <b>${count}</b> 筆預購單至核銷清單。`
+                });
+
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: '匯入失敗', text: err.message });
+            }
+        }
+    };
+
+    // ====== 固定週期取貨模組 ======
+    window.renderConsoleTemplates = function() {
+        const container = document.getElementById('console-templates-list');
+        if(!container) return;
+        container.innerHTML = '';
+        const keys = Object.keys(globalTemplates);
+
+        if(keys.length === 0) {
+            container.innerHTML = `<div style="grid-column: span 2; text-align:center; padding:15px; color:#888; font-size:0.8rem;">尚未建立週期模組，可點選上方新增或匯入。</div>`;
+            return;
+        }
+
+        keys.forEach(k => {
+            const tpl = globalTemplates[k];
+            container.innerHTML += `
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:8px; display:flex; flex-direction:column; justify-content:space-between; gap:6px;">
+                    <div>
+                        <b style="font-size:0.85rem; color:#0f172a;">⚡ ${tpl.title}</b>
+                        <div style="font-size:0.75rem; color:#64748b;">${tpl.orders?.length || 0} 位常態客</div>
+                    </div>
+                    <div style="display:flex; gap:4px;">
+                        <button style="flex:2; background:var(--primary); color:white; border:none; padding:4px; border-radius:4px; font-size:0.75rem; font-weight:bold; cursor:pointer;" onclick="window.applyTemplateToCurrentDate('${k}')">套用至本日</button>
+                        <button style="flex:1; background:#fee2e2; color:var(--danger); border:none; padding:4px; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="window.deleteTemplate('${k}')">刪除</button>
+                    </div>
+                </div>
+            `;
+        });
+    };
+
+    window.promptSaveCurrentAsTemplate = async function() {
+        const pending = Object.values(globalPickups).filter(p => p.status === 'pending');
+        if(pending.length === 0) return Swal.fire({ icon: 'info', title: '目前無待出貨單據可建立範本！' });
+
+        const { value: title } = await Swal.fire({
+            title: '儲存目前名單為週期模組',
+            input: 'text',
+            inputPlaceholder: '例如：週一A組固定客',
+            showCancelButton: true,
+            confirmButtonText: '儲存',
+            cancelButtonText: '取消'
+        });
+
+        if(title && title.trim()) {
+            const tplKey = title.trim().replace(/[\.\#\$\/\[\]]/g, '_');
+            const orders = pending.map(p => ({
+                nickname: p.nickname,
+                phone: p.phone || '',
+                venueName: p.venueName,
+                isFamily: p.isFamily || false,
+                bigQty: p.bigQty || 0,
+                bigPrice: p.bigPrice || 120,
+                midQty: p.midQty || 0,
+                midPrice: p.midPrice || 65
+            }));
+
+            await set(ref(db, `system_templates/${tplKey}`), {
+                title: title.trim(),
+                orders: orders,
+                updatedAt: Date.now()
+            });
+
+            Toast.fire({ icon: 'success', title: `已成功保存「${title.trim()}」模組！` });
+        }
+    };
+
+    window.applyTemplateToCurrentDate = async function(tplKey) {
+        const tpl = globalTemplates[tplKey];
+        if(!tpl || !tpl.orders || tpl.orders.length === 0) return;
+
+        const targetDate = window.globalDateStr;
+        const res = await Swal.fire({
+            title: `導入 [${tpl.title}] 至本日？`,
+            html: `即將把 <b>${tpl.orders.length}</b> 位常客排程至：<br><b style="color:var(--primary); font-size:1.15rem;">${targetDate}</b>`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: '確定導入',
+            cancelButtonText: '取消'
+        });
+
+        if(res.isConfirmed) {
+            const now = Date.now();
+            let added = 0;
+
+            for(let i = 0; i < tpl.orders.length; i++) {
+                const o = tpl.orders[i];
+                const uniqueKey = `${targetDate}_${o.nickname}_${o.venueName}`.replace(/[\.\#\$\/\[\]]/g, '_');
+                
+                if(!globalPickups[uniqueKey]) {
+                    const venueId = Object.keys(globalVenues).find(k => globalVenues[k].name === o.venueName) || 'default';
+                    const rev = (o.bigQty * o.bigPrice) + (o.midQty * o.midPrice);
+                    const items = [];
+                    const cartData = {};
+
+                    if(o.bigQty > 0) {
+                        items.push(`大羊奶 x ${o.bigQty} ($${o.bigPrice})`);
+                        cartData['prod_big'] = { item: { id: 'prod_big', name: '大羊奶', price: o.bigPrice, cost: 0 }, qty: o.bigQty };
+                    }
+                    if(o.midQty > 0) {
+                        items.push(`中羊奶 x ${o.midQty} ($${o.midPrice})`);
+                        cartData['prod_mid'] = { item: { id: 'prod_mid', name: '中羊奶', price: o.midPrice, cost: 0 }, qty: o.midQty };
+                    }
+
+                    await set(ref(db, `pickups/${uniqueKey}`), {
+                        id: uniqueKey,
+                        nickname: o.nickname,
+                        phone: o.phone || '',
+                        dateStr: targetDate,
+                        venueId: venueId,
+                        venueName: o.venueName,
+                        isFamily: o.isFamily || false,
+                        bigQty: o.bigQty,
+                        bigPrice: o.bigPrice,
+                        midQty: o.midQty,
+                        midPrice: o.midPrice,
+                        items: items.join('\n'),
+                        revenue: rev,
+                        profit: rev * 0.4,
+                        cartData: cartData,
+                        discount: 0,
+                        status: 'pending',
+                        timestamp: now + i
+                    });
+                    added++;
+                }
+            }
+
+            Swal.fire({ icon: 'success', title: '模組導入完成', text: `已建立 ${added} 筆當日預購訂單！` });
+        }
+    };
+
+    window.deleteTemplate = async function(tplKey) {
+        const res = await Swal.fire({
+            title: '確定刪除此模組？',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '刪除',
+            cancelButtonText: '取消'
+        });
+        if(res.isConfirmed) {
+            await remove(ref(db, `system_templates/${tplKey}`));
+            Toast.fire({ icon: 'success', title: '模組已刪除' });
+        }
+    };
+
+    // ====== 報表與週一至週日營業分析 ======
+    const getTargetDates = (mode, baseDateStr) => {
+        let baseD = new Date(baseDateStr);
+        let fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+        if(mode === 'daily') return [baseDateStr];
+        if(mode === 'yesterday') {
+            let y = new Date(baseD); y.setDate(y.getDate() - 1);
+            return [fmt(y)];
+        }
+        if(mode === 'weekend') {
+            let day = baseD.getDay();
+            let diffToFri = (day === 0 ? -2 : 5 - day);
+            let fri = new Date(baseD); fri.setDate(fri.getDate() + diffToFri);
+            let sat = new Date(fri); sat.setDate(sat.getDate() + 1);
+            let sun = new Date(fri); sun.setDate(sun.getDate() + 2);
+            return [fmt(fri), fmt(sat), fmt(sun)];
+        }
+        return [];
+    };
+
+    window.switchStatMode = function(mode) {
+        window.statMode = mode;
+        document.querySelectorAll('.report-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`btn-stat-${mode}`).classList.add('active');
+        window.updateStats();
+    };
+
+    window.updateStats = function() {
+        let rev = 0, prof = 0;
+        let validDates = getTargetDates(window.statMode, window.globalDateStr);
+        let rangeText = "";
+
+        Object.keys(globalOrders).forEach(k => {
+            const o = globalOrders[k];
+            let oDate = o.dateStr;
+            if(!oDate && o.timestamp) {
+                let d = new Date(o.timestamp);
+                oDate = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+            }
+
+            let isMatch = false;
+            if (window.statMode === 'all') isMatch = true;
+            else if (window.statMode === 'monthly') isMatch = (o.monthStr === window.globalDateStr.substring(0,7));
+            else isMatch = validDates.includes(oDate);
+
+            if(isMatch) { rev += o.revenue||0; prof += o.profit||0; }
+        });
+
+        document.getElementById('stat-revenue').innerText = rev.toLocaleString();
+        document.getElementById('stat-profit').innerText = prof.toLocaleString();
+
+        if(window.statMode === 'all') rangeText = "歷史總計";
+        else if(window.statMode === 'monthly') rangeText = `月份：${window.globalDateStr.substring(0,7)}`;
+        else if(window.statMode === 'weekend') rangeText = `區間：${validDates[0]} ~ ${validDates[2]}`;
+        else rangeText = `日期：${validDates[0]}`;
+        
+        document.getElementById('stat-date-range').innerText = rangeText;
+    };
+
+    window.renderWeekStats = function() {
+        const list = document.getElementById('week-days-list');
+        const spanText = document.getElementById('week-date-span');
+        if(!list) return;
+        list.innerHTML = '';
+
+        let curr = new Date(window.globalDateStr);
+        let dayOfWeek = curr.getDay(); 
+        let distanceToMonday = (dayOfWeek + 6) % 7;
+        
+        let monday = new Date(curr);
+        monday.setDate(curr.getDate() - distanceToMonday);
+
+        const weekNames = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+        let weekDates = [];
+        let dayRevenues = [0, 0, 0, 0, 0, 0, 0];
+        let dayCounts = [0, 0, 0, 0, 0, 0, 0];
+
+        for(let i = 0; i < 7; i++) {
+            let d = new Date(monday);
+            d.setDate(monday.getDate() + i);
+            weekDates.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
+        }
+
+        if(spanText) {
+            spanText.innerText = `${weekDates[0].substring(5)} ~ ${weekDates[6].substring(5)}`;
+        }
+
+        Object.keys(globalOrders).forEach(k => {
+            const o = globalOrders[k];
+            let oDate = o.dateStr;
+            if(!oDate && o.timestamp) {
+                let d = new Date(o.timestamp);
+                oDate = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+            }
+            const idx = weekDates.indexOf(oDate);
+            if(idx !== -1) {
+                dayRevenues[idx] += o.revenue || 0;
+                dayCounts[idx] += 1;
+            }
+        });
+
+        const maxRev = Math.max(...dayRevenues, 1);
+
+        weekDates.forEach((dateStr, i) => {
+            const rev = dayRevenues[i];
+            const cnt = dayCounts[i];
+            const pct = Math.round((rev / maxRev) * 100);
+            const isToday = dateStr === window.globalDateStr;
+
+            list.innerHTML += `
+                <div class="day-stat-row">
+                    <div class="day-badge ${isToday ? 'today' : ''}">${weekNames[i]}</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted); width:50px; text-align:center;">${dateStr.substring(5)}</div>
+                    <div class="day-progress-wrap">
+                        <div class="day-progress-bar" style="width: ${pct}%;"></div>
+                    </div>
+                    <div style="width:40px; font-size:0.75rem; color:var(--text-muted); text-align:right;">${cnt}筆</div>
+                    <div style="width:75px; text-align:right; font-weight:800; color:${rev > 0 ? 'var(--primary)' : 'var(--text-muted)'};">$${rev.toLocaleString()}</div>
+                </div>
+            `;
+        });
+    };
+
+    // ====== 熱鍵綁定 ======
+    window.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+        if (e.key === 'm' || e.key === 'M') {
+            e.preventDefault();
+            const firstTplKey = Object.keys(globalTemplates)[0];
+            if(firstTplKey) window.applyTemplateToCurrentDate(firstTplKey);
+            else Toast.fire({ icon: 'info', title: '目前尚未建立任何模組' });
+        }
+        if (e.key === '1') window.switchTab('pos');
+        if (e.key === '2') window.switchTab('fulfillment');
+        if (e.key === '3') window.switchTab('history');
+        if (e.key === '4') window.switchTab('stats');
+        if (e.key === '5') window.switchTab('console');
+    });
+
+    initializeSystem();
+</script>
+</body>
+</html>
